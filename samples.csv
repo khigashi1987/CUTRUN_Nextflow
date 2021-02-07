@@ -1,0 +1,2 @@
+sample_id,fastq_1,fastq_2
+GATA1_D7_30min_chr11,./data/GATA1_D7_30min_chr11_R1_001.fastq.gz,./data/GATA1_D7_30min_chr11_R2_001.fastq.gz
