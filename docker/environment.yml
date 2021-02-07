@@ -1,0 +1,23 @@
+name: cutrun_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  ## conda-forge packages
+  - conda-forge::python=2.7
+  - conda-forge::r-base=4.0.2
+
+  ## bioconda packages
+  - bioconda::trimmomatic=0.39
+  - bioconda::bowtie2=2.3.5.1
+  - bioconda::samtools=1.11
+  - bioconda::picard=2.24.2
+  - bioconda::macs2=2.1.1.20160309
+  - bioconda::bedops=2.4.39
+  - bioconda::bedtools=2.30.0
+  - bioconda::deeptools=3.3.0
+  - bioconda::homer=4.11
+
+  ## Additional R packages
+  - bioconda::bioconductor-rsamtools=2.6.0
