@@ -6,6 +6,6 @@ Short-read trimming and alignment processes are based on the following paper:
 
 MACS2 and [SEACR](https://github.com/FredHutch/SEACR) can be used to call peaks.
 
-## Flowcahrt
+## Flowchart
 
 ![flowchart](./flowchart.png)
