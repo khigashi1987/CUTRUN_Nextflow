@@ -415,7 +415,7 @@ if (params.macs_gsize && !params.blacklist) {
 
         input:
         tuple val(name), path(peaks) from ch_macs_peaks
-        path(bed) from ch_genome_filter_regions_macs
+        path(bed) from ch_genome_filter_regions_macs.collect()
 
         output:
         tuple val(name), path('*.filtered.narrowPeak') into ch_filtered_macs_peaks,
@@ -439,7 +439,7 @@ if (!params.skip_seacr && !params.blacklist) {
 
         input:
         tuple val(name), path(peaks) from ch_seacr_peaks
-        path(bed) from ch_genome_filter_regions_seacr
+        path(bed) from ch_genome_filter_regions_seacr.collect()
 
         output:
         tuple val(name), path('*.filtered.narrowPeak') into ch_filtered_seacr_peaks,
