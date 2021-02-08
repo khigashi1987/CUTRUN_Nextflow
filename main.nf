@@ -5,7 +5,7 @@ def helpMessage() {
     Usage:
     The typical command for running the pipeline is as follows:
 
-      nextflow run main.nf --input ./samples.csv \
+      nextflow run khigashi1987/CUTRUN_Nextflow --input ./samples.csv \
         --adapter /path/to/adapter.fa \
         --fasta /path/to/genome.fa \
         --gtf /path/to/genes.gtf \
