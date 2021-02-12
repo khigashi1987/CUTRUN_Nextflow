@@ -11,23 +11,14 @@ MACS2 and [SEACR](https://github.com/FredHutch/SEACR) can be used to call peaks.
 ![flowchart](./flowchart.png)
 
 ## Usage
-$nextflow run khigashi1987/CUTRUN_Nextflow -r main --help
-
 ```bash
+$nextflow run khigashi1987/CUTRUN_Nextflow -r main --help
 N E X T F L O W  ~  version 20.10.0
-Launching `khigashi1987/CUTRUN_Nextflow` [prickly_faggin] - revision: 0803214b50 [main]
+Launching `./main.nf` [nice_pasteur] - revision: 48ae873b6f
 Usage:
 The typical command for running the pipeline is as follows:
 
-  nextflow run khigashi1987/CUTRUN_Nextflow --input ./samples.csv \
-        --adapter /path/to/adapter.fa \
-        --fasta /path/to/genome.fa \
-        --gtf /path/to/genes.gtf \
-        --bt2_index /path/to/genome \
-        --gene_bed /path/to/genes.bed \
-        --macs_gsize "2.7e9" \
-        -profile docker
-
+  nextflow run khigashi1987/CUTRUN_Nextflow --input ./samples.csv         --adapter /path/to/adapter.fa         --fasta /path/to/genome.fa         --gtf /path/to/genes.gtf         --bt2_index /path/to/genome         --gene_bed /path/to/genes.bed         --macs_gsize "2.7e9"         -profile docker
 
 Mandatory arguments:
   --input [file]                  Comma-separated file containing information about the samples in the experiment
@@ -57,6 +48,10 @@ Peaks
 
 Plotting
   --skip_plot_profile [bool]      Skip PLOTPROFILE process. (Default: false)
+
+QC
+  --skip_fastqc [bool]            Skip FastQC. (Default: false)
+  --skip_multiqc [bool]           Skip MultiQC. (Default: false)
 
 Other
   --outdir [file]                 The output directory where the results will be saved (Default: './results')
