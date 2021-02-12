@@ -5,19 +5,20 @@ channels:
   - defaults
 dependencies:
   ## conda-forge packages
-  - conda-forge::python=2.7
-  - conda-forge::r-base=4.0.2
+  - conda-forge::r-base=4.0.3
 
   ## bioconda packages
+  - bioconda::fastqc=0.11.9
   - bioconda::trimmomatic=0.39
-  - bioconda::bowtie2=2.3.5.1
+  - bioconda::bowtie2=2.4.2
   - bioconda::samtools=1.11
-  - bioconda::picard=2.24.2
-  - bioconda::macs2=2.1.1.20160309
+  - bioconda::picard=2.25.0
+  - bioconda::macs2=2.2.7.1
   - bioconda::bedops=2.4.39
   - bioconda::bedtools=2.30.0
-  - bioconda::deeptools=3.3.0
+  - bioconda::deeptools=3.5.0
   - bioconda::homer=4.11
+  - bioconda::multiqc=1.9
 
   ## Additional R packages
   - bioconda::bioconductor-rsamtools=2.6.0

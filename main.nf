@@ -42,6 +42,10 @@ def helpMessage() {
     
     Plotting
       --skip_plot_profile [bool]      Skip PLOTPROFILE process. (Default: false)
+    
+    QC
+      --skip_fastqc [bool]            Skip FastQC. (Default: false)
+      --skip_multiqc [bool]           Skip MultiQC. (Default: false)
 
     Other
       --outdir [file]                 The output directory where the results will be saved (Default: './results')
@@ -57,13 +61,25 @@ if (params.help) {
 }
 
 ////////////////////////////////////////////////////
+/* --        MULTIQC CONFIG FILES              -- */
+////////////////////////////////////////////////////
+
+// Pipeline config
+ch_multiqc_config = file("$projectDir/assets/multiqc_config.yml", checkIfExists: true)
+
+// Header files for MultiQC
+ch_peak_count_header = file("$projectDir/assets/multiqc/peak_count_header.txt", checkIfExists: true)
+ch_frip_score_header = file("$projectDir/assets/multiqc/frip_score_header.txt", checkIfExists: true)
+
+////////////////////////////////////////////////////
 /* --          VALIDATE INPUTS                 -- */
 ////////////////////////////////////////////////////
 
 Channel.fromPath(params.input, checkIfExists: true)
     .splitCsv(header:true, sep:',')
     .map { row -> [ row.sample_id, [ file(row.fastq_1, checkIfExists: true), file(row.fastq_2, checkIfExists: true) ] ] }
-    .set { ch_raw_reads_trim }
+    .into {  ch_raw_reads_fastqc;
+            ch_raw_reads_trim }
 
 if (params.gtf)       { ch_gtf = file(params.gtf, checkIfExists: true) } else { exit 1, 'GTF annotation file not specified!' }
 if (params.gene_bed)  { ch_gene_bed = file(params.gene_bed, checkIfExists: true) }
@@ -99,7 +115,7 @@ process MAKE_GENOME_FILTER {
     path blacklist from ch_blacklist.ifEmpty([])
 
     output:
-    path "$fasta"                                      // FASTA FILE FOR IGV
+    path "$fasta"                                      // FASTA FILE
     path '*.fai'                                       // FAI INDEX FOR REFERENCE GENOME
     path '*.bed' into ch_genome_filter_regions         // BED FILE WITHOUT BLACKLIST REGIONS
     path '*.sizes' into ch_genome_sizes_bigwig,        // CHROMOSOME SIZES FILE FOR BEDTOOLS
@@ -132,6 +148,8 @@ summary['MACS2 Genome Size']      = params.macs_gsize ?: 'Not supplied.'
 if (params.macs_gsize)            summary['MACS2 q-value'] = params.macs_qvalue
 if (!params.skip_seacr)           summary['SEACR Mode'] = params.seacr_mode
 if (!params.skip_seacr)           summary['SEACR Threshold'] = params.seacr_threshold
+if (params.skip_fastqc)           summary['Skip FastQC'] = 'Yes'
+if (params.skip_multiqc)          summary['Skip MultiQC'] = 'Yes'
 if (workflow.containerEngine)     summary['Container'] = "$workflow.containerEngine - $workflow.container"
 summary['Output Dir']             = params.outdir
 summary['Launch Dir']             = workflow.launchDir
@@ -141,6 +159,35 @@ summary['User']                   = workflow.userName
 summary['Config Profile']         = workflow.profile
 log.info summary.collect { k,v -> "${k.padRight(20)}: $v" }.join('\n')
 
+///////////////////////////////////////////////////////////////////////////////
+/* --                        FASTQ QC                                     -- */
+///////////////////////////////////////////////////////////////////////////////
+
+process FASTQC {
+    tag "$name"
+    publishDir "${params.outdir}/fastqc", mode: params.publish_dir_mode,
+        saveAs: { filename ->
+                      filename.endsWith('.zip') ? "zips/$filename" : filename
+                }
+
+    when:
+    !params.skip_fastqc
+
+    input:
+    tuple val(name), path(reads) from ch_raw_reads_fastqc
+
+    output:
+    path '*.{zip,html}' into ch_fastqc_reports_mqc
+
+    script:
+    // Added soft-links to original fastqs for consistent naming in MultiQC
+    """
+    [ ! -f  ${name}_1.fastq.gz ] && ln -s ${reads[0]} ${name}_1.fastq.gz
+    [ ! -f  ${name}_2.fastq.gz ] && ln -s ${reads[1]} ${name}_2.fastq.gz
+    fastqc -q -t $task.cpus ${name}_1.fastq.gz
+    fastqc -q -t $task.cpus ${name}_2.fastq.gz
+    """
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 /* --                        ADAPTER TRIMMING                             -- */
@@ -148,7 +195,12 @@ log.info summary.collect { k,v -> "${k.padRight(20)}: $v" }.join('\n')
 
 process TRIM_1STROUND {
     tag "$name"
-    publishDir "${params.outdir}/trim_1st", mode: params.publish_dir_mode
+    publishDir "${params.outdir}/trim_1st", mode: params.publish_dir_mode,
+        saveAs: { filename ->
+                    if (filename.endsWith('.html')) "fastqc/$filename"
+                    else if (filename.endsWith('.zip')) "fastqc/zips/$filename"
+                    else filename
+            }
 
     input:
     tuple val(name), path(reads) from ch_raw_reads_trim
@@ -156,6 +208,7 @@ process TRIM_1STROUND {
 
     output:
     tuple val(name), path('*.paired.fastq.gz') into ch_trimmed_1st
+    path '*.{zip,html}' into ch_trim1st_fastqc_reports_mqc
 
     """
     [ ! -f  ${name}_1.fastq.gz ] && ln -s ${reads[0]} ${name}_1.fastq.gz
@@ -169,22 +222,32 @@ process TRIM_1STROUND {
       TRAILING:20 \
       SLIDINGWINDOW:4:15 \
       MINLEN:25
+    fastqc -q -t $task.cpus ${name}_1.paired.fastq.gz
+    fastqc -q -t $task.cpus ${name}_2.paired.fastq.gz
     """
 }
 
-process TRIM_2NDROUNT {
+process TRIM_2NDROUND {
     tag "$name"
-    publishDir "${params.outdir}/trim_2nd", mode: params.publish_dir_mode
+    publishDir "${params.outdir}/trim_2nd", mode: params.publish_dir_mode,
+        saveAs: { filename ->
+                    if (filename.endsWith('.html')) "fastqc/$filename"
+                    else if (filename.endsWith('.zip')) "fastqc/zips/$filename"
+                    else filename
+            }
 
     input:
     tuple val(name), path(reads) from ch_trimmed_1st
 
     output:
     tuple val(name), path('*.paired.trimmed.fastq.gz') into ch_trimmed_2nd
+    path '*.{zip,html}' into ch_trim2nd_fastqc_reports_mqc
 
     """
     kseq_test ${reads[0]} ${params.seq_len} ${name}_1.paired.trimmed.fastq.gz
     kseq_test ${reads[1]} ${params.seq_len} ${name}_2.paired.trimmed.fastq.gz
+    fastqc -q -t $task.cpus ${name}_1.paired.trimmed.fastq.gz
+    fastqc -q -t $task.cpus ${name}_2.paired.trimmed.fastq.gz
     """
 }
 
@@ -248,6 +311,7 @@ if (params.skip_dedup) {
 
       output:
       tuple val(name), path('*.sorted.dedup.bam') into ch_dedup_bam
+      path '*.txt' into ch_picard_metrics_mqc
 
       """
       java -jar ${params.picard_jar} MarkDuplicates INPUT=${bam} \
@@ -285,17 +349,24 @@ if (params.skip_filter) {
 /* --                      CONVERT  ALIGNMENT                             -- */
 ///////////////////////////////////////////////////////////////////////////////
 
-ch_filtered_bam.into {ch_filtered_bam_macs; ch_filtered_bam_flagstat; ch_filtered_bam_bedgraph; ch_filtered_bam_bigwig}
+ch_filtered_bam.into {ch_filtered_bam_macs; ch_filtered_bam_filter_macs; ch_filtered_bam_flagstat; ch_filtered_bam_bedgraph; ch_filtered_bam_bigwig}
 
 process FLAGSTAT {
+    tag "$name"
+    publishDir "${params.outdir}/flagstat", mode: params.publish_dir_mode
+
     input:
     tuple val(name), path(bam) from ch_filtered_bam_flagstat
 
     output:
-    tuple val(name), path('*.flagstat') into ch_flagstat_bigwig
+    tuple val(name), path('*.flagstat') into ch_flagstat_bigwig,
+                                             ch_flagstat_macs
+    path '*.{flagstat,idxstats,stats}' into ch_flagstat_mqc
 
     """
     samtools flagstat ${bam[0]} > ${name}.sorted.dedup.filtered.bam.flagstat
+    samtools idxstats ${bam[0]} > ${name}.sorted.dedup.filtered.bam.idxstats
+    samtools stats ${bam[0]} > ${name}.sorted.dedup.filtered.bam.stats
     """
 }
 
@@ -348,7 +419,12 @@ process BEDGRAPH {
 
 process MACS2 {
     tag "$name"
-    publishDir "${params.outdir}/macs", mode: params.publish_dir_mode
+    publishDir "${params.outdir}/macs", mode: params.publish_dir_mode,
+        saveAs: { filename ->
+                      if (filename.endsWith('.tsv')) "qc/$filename"
+                      else if (filename.endsWith('.igv.txt')) null
+                      else filename
+                }
 
     when:
     params.macs_gsize
@@ -407,25 +483,38 @@ if (params.macs_gsize && !params.skip_seacr) {
 }
 
 if (params.macs_gsize && !params.blacklist) {
-    ch_macs_peaks.into {ch_filtered_macs_peaks; ch_filtered_macs_peaks_annot}
+    ch_macs_peaks.into {ch_filtered_macs_peaks_qc; ch_filtered_macs_peaks_annot}
 } else {
     process FILTER_MACS_PEAKS {
         tag "$name"
         publishDir "${params.outdir}/macs", mode: params.publish_dir_mode
 
         input:
-        tuple val(name), path(peaks) from ch_macs_peaks
+        tuple val(name), path(peaks), path(flagstat), path(bam) from ch_macs_peaks.join(ch_flagstat_macs, by: [0]).join(ch_filtered_bam_filter_macs, by:[0])
         path(bed) from ch_genome_filter_regions_macs.collect()
+        path peak_count_header from ch_peak_count_header
+        path frip_score_header from ch_frip_score_header
+
 
         output:
-        tuple val(name), path('*.filtered.narrowPeak') into ch_filtered_macs_peaks,
+        tuple val(name), path('*.filtered.narrowPeak') into ch_filtered_macs_peaks_qc,
                                                             ch_filtered_macs_peaks_annot
+        path '*_mqc.tsv' into ch_macs_mqc
 
         """
         cat ${peaks} | \
           grep -v -e "chrM" | \
           sort-bed - | \
           bedops -n 1 - ${bed} > ${name}.filtered.narrowPeak
+
+        cat ${name}.filtered.narrowPeak | \
+            wc -l | \
+            awk -v OFS='\t' '{ print "${name}", \$1 }' | \
+            cat $peak_count_header - > ${name}_peaks.count_mqc.tsv
+        READS_IN_PEAKS=\$(intersectBed -a ${bam[0]} -b ${name}.filtered.narrowPeak -bed -c -f 0.20 | awk -F '\t' '{sum += \$NF} END {print sum}')
+        grep 'mapped (' $flagstat | awk -v a="\$READS_IN_PEAKS" -v OFS='\t' '{print "${name}", a/\$1}' | \
+            cat $frip_score_header - \
+            > ${name}_peaks.FRiP_mqc.tsv
         """
     }
 }
@@ -520,6 +609,7 @@ process PLOTPROFILE {
     path bed from ch_gene_bed
 
     output:
+    path '*.plotProfile.tab' into ch_plotprofile_mqc
     path '*.{gz,pdf,mat.tab}'
 
     script:
@@ -541,5 +631,55 @@ process PLOTPROFILE {
     plotHeatmap --matrixFile ${name}.computeMatrix.mat.gz \\
         --outFileName ${name}.plotHeatmap.pdf \\
         --outFileNameMatrix ${name}.plotHeatmap.mat.tab
+    """
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/* --                          MULTIQC                                    -- */
+///////////////////////////////////////////////////////////////////////////////
+
+Channel.from(summary.collect{ [it.key, it.value] })
+    .map { k,v -> "<dt>$k</dt><dd><samp>${v ?: '<span style=\"color:#999999;\">N/A</a>'}</samp></dd>" }
+    .reduce { a, b -> return [a, b].join("\n            ") }
+    .map { x -> """
+    id: 'cutrun-nextflow-summary'
+    description: " - this information is collected when the pipeline is started."
+    section_name: 'cutrun_nextflow Workflow Summary'
+    section_href: 'https://github.com/khigashi1987/CUTRUN_Nextflow'
+    plot_type: 'html'
+    data: |
+        <dl class=\"dl-horizontal\">
+            $x
+        </dl>
+    """.stripIndent() }
+    .set { ch_workflow_summary }
+
+process MULTIQC {
+    tag "$name"
+    publishDir "${params.outdir}/multiqc/", mode: params.publish_dir_mode
+
+    when:
+    !params.skip_multiqc && params.macs_gsize && params.blacklist
+
+    input:
+    path (multiqc_config) from ch_multiqc_config
+    path workflow_summary from ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml')
+    path ('fastqc/*') from ch_fastqc_reports_mqc.collect().ifEmpty([])
+    path ('trim_1st/fastqc/*') from ch_trim1st_fastqc_reports_mqc.collect().ifEmpty([])
+    path ('trim_2nd/fastqc/*') from ch_trim2nd_fastqc_reports_mqc.collect().ifEmpty([])
+    path ('alignment/*') from ch_flagstat_mqc
+    path ('alignment/picard_metrics/*') from ch_picard_metrics_mqc.collect()
+    path ('macs/*') from ch_macs_mqc.collect().ifEmpty([])
+    path ('deeptools/*') from ch_plotprofile_mqc.collect().ifEmpty([])
+
+    output:
+    path '*multiqc_report.html'
+    path '*_data'
+
+    script:
+    rtitle = "--title \"$params.name\""
+    rfilename = "--filename " + params.name + "_multiqc_report"
+    """
+    multiqc . -f $rtitle $rfilename
     """
 }
