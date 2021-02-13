@@ -667,7 +667,7 @@ process MULTIQC {
     path ('fastqc/*') from ch_fastqc_reports_mqc.collect().ifEmpty([])
     path ('trim_1st/fastqc/*') from ch_trim1st_fastqc_reports_mqc.collect().ifEmpty([])
     path ('trim_2nd/fastqc/*') from ch_trim2nd_fastqc_reports_mqc.collect().ifEmpty([])
-    path ('alignment/*') from ch_flagstat_mqc
+    path ('alignment/*') from ch_flagstat_mqc.collect()
     path ('alignment/picard_metrics/*') from ch_picard_metrics_mqc.collect()
     path ('macs/*') from ch_macs_mqc.collect().ifEmpty([])
     path ('deeptools/*') from ch_plotprofile_mqc.collect().ifEmpty([])
